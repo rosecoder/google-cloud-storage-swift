@@ -1,55 +1,57 @@
+import Foundation
+import GoogleCloudAuthTesting
 import NIO
-import XCTest
+import Testing
 
 @testable import CloudStorage
 
-final class SigningTests: XCTestCase {
+@Suite(.enabledIfAuthenticatedWithGoogleCloud)
+struct SigningTests {
 
-  private let eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+  private let object = Object.test()
+  private let bucket = Bucket.test
 
-  private let object = Object(path: "testSignForWrite/\(UUID().uuidString).txt")
-  private let bucket = Bucket(name: "<#bucket name#>")
+  @Test func signForWrite() async throws {
+    let storage = Storage()
+    let run = Task { try await storage.run() }
 
-  override func setUp() async throws {
-    try await super.setUp()
+    do {
+      // Generate URL for writing
+      let urlForWrite = try await storage.generateSignedURL(
+        for: .writing, object: object, in: bucket)
 
-    let serviceAccountData = try Data(contentsOf: URL(fileURLWithPath: "<#service account url#>"))
-    let serviceAccount = try JSONDecoder().decode(ServiceAccount.self, from: serviceAccountData)
+      // Upload a plain text file
+      var request = URLRequest(url: try #require(URL(string: urlForWrite)))
+      request.httpMethod = "PUT"
+      request.setValue("text/plain", forHTTPHeaderField: "Content-Type")
 
-    await ServiceAccountCoordinator.shared.use(custom: serviceAccount)
-  }
+      request.httpBody = "Hello world!".data(using: .utf8)!
 
-  func testSignForWrite() async throws {
+      let (_, response) = try await URLSession.shared.data(for: request)
+      let statusCode = try #require((response as? HTTPURLResponse)?.statusCode)
+      #expect((200..<300).contains(statusCode))
 
-    // Generate URL for writing
-    let urlForWrite = try await Storage.generateSignedURL(for: .writing, object: object, in: bucket)
+      // Generate URL for reading
+      let urlForRead = try await storage.generateSignedURL(
+        for: .reading,
+        object: object,
+        in: bucket
+      )
 
-    // Upload a plain text file
-    let boundary = "__GC-SWIFT_BOUNDARY__"
+      // Assert that uploaded is same as read
+      let (data, _) = try await URLSession.shared.data(from: try #require(URL(string: urlForRead)))
+      let string = try #require(String(data: data, encoding: .utf8))
+      #expect(string == "Hello world!")
 
-    var request = URLRequest(url: URL(string: urlForWrite)!)
-    request.httpMethod = "PUT"
-    request.setValue(
-      "multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-
-    var requestBody = ""
-    requestBody.append("--\(boundary)\r\n")
-    requestBody.append("Content-Disposition: form-data; name=\"file\"\r\n")
-    requestBody.append("Content-Type: text/plain\r\n\r\n")
-    requestBody.append("Hello world!")
-    requestBody.append("\r\n")
-    requestBody.append("--\(boundary)--\r\n")
-    request.httpBody = Data(requestBody.utf8)
-
-    let (_, response) = try await URLSession.shared.data(for: request)
-    XCTAssertEqual((response as! HTTPURLResponse).statusCode, 204)
-
-    // Generate URL for reading
-    let urlForRead = try await Storage.generateSignedURL(for: .reading, object: object, in: bucket)
-
-    // Assert that uploaded is same as read
-    let (data, _) = try await URLSession.shared.data(from: URL(string: urlForRead)!)
-    let string = String(data: data, encoding: .utf8)!
-    XCTAssertEqual(string, "Hello world!")
+      // Cleanup
+      try await storage.delete(object: object, in: bucket)
+    } catch {
+      run.cancel()
+      try await run.value
+      throw error
+    }
+    run.cancel()
+    try await run.value
+    _ = storage
   }
 }

@@ -23,4 +23,14 @@ public final class InMemoryStorage: StorageProtocol {
       $0.removeValue(forKey: key(object: object, in: bucket))
     }
   }
+
+  public func generateSignedURL(
+    for action: SignedAction,
+    expiration: TimeInterval,
+    object: Object,
+    in bucket: Bucket
+  ) async throws -> String {
+    // For in-memory storage, we can't generate actual signed URLs
+    throw StorageError.unsupportedOperation("InMemoryStorage does not support signed URLs")
+  }
 }

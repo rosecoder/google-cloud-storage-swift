@@ -29,10 +29,6 @@ public final class Storage: Service, StorageProtocol {
     self.client = HTTPClient(eventLoopGroupProvider: .shared(.singletonMultiThreadedEventLoopGroup))
   }
 
-  #if DEBUG
-    let isUsingLocalStorage = true
-  #endif
-
   public func run() async throws {
     await cancelWhenGracefulShutdown {
       while !Task.isCancelled {

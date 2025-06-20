@@ -32,12 +32,6 @@ extension Storage {
       throw SignError.expirationTooLong
     }
 
-    #if DEBUG
-      guard !isUsingLocalStorage else {
-        return object.localStorageURL(in: bucket).absoluteString
-      }
-    #endif
-
     let httpMethod: String
     switch action {
     case .reading:

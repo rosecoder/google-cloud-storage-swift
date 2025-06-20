@@ -13,10 +13,4 @@ public struct Object: Sendable {
   var urlEncoded: String {
     path.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
   }
-
-  #if DEBUG
-    func localStorageURL(in bucket: Bucket) -> URL {
-      URL(fileURLWithPath: bucket.localStorageURL.path + "/" + path)
-    }
-  #endif
 }

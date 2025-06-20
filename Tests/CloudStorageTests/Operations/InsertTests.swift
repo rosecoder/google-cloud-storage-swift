@@ -1,17 +1,35 @@
 import CloudStorage
-import XCTest
+import Testing
 
-final class InsertTests: EmulatorTestCase {
+@Suite(.enabledIfAuthenticatedWithGoogleCloud)
+struct InsertTests {
 
-  func testWriteSimpleTextObject() async throws {
-    let bucket = Bucket(name: "google-cloud-swift-test")
-    let object = Object(path: "\(#function)/test.txt")
+  @Test func writeSimpleTextObject() async throws {
+    let bucket = Bucket.test
+    let object = Object.test()
 
-    try await Storage.insert(
-      data: "Hello world!".data(using: .utf8)!,
-      contentType: "text/plain",
-      object: object,
-      in: bucket
-    )
+    let storage = Storage()
+    let run = Task { try await storage.run() }
+    do {
+      // Arrange
+      try await storage.insert(
+        data: "Hello world!".data(using: .utf8)!,
+        contentType: "text/plain",
+        object: object,
+        in: bucket
+      )
+
+      // Assert
+      // TODO: Check if object is written
+
+      // Cleanup
+      try await storage.delete(object: object, in: bucket)
+    } catch {
+      run.cancel()
+      try await run.value
+      throw error
+    }
+    run.cancel()
+    try await run.value
   }
 }

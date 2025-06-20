@@ -1,5 +1,5 @@
 {
-  "originHash" : "08bbbc86724f24dad67bfa22d8fba155f9e98998d3ee829e44a4280f9de26d02",
+  "originHash" : "5d16ece66e563b73f75f77b818669178d608bf63854318dd7572b2a957132563",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/rosecoder/google-cloud-auth-swift.git",
       "state" : {
-        "revision" : "f17bdfd2e75eb19df13ac07dfd1ddd2d20287fa5",
-        "version" : "1.2.1"
+        "revision" : "9119eaeceaf0268be0b550eb37b5d75e7561a28a",
+        "version" : "1.2.2"
       }
     },
     {
