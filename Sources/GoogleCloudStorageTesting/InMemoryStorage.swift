@@ -1,5 +1,5 @@
-import CloudStorage
 import Foundation
+import GoogleCloudStorage
 import Synchronization
 
 public final class InMemoryStorage: StorageProtocol {

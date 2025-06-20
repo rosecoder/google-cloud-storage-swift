@@ -3,7 +3,7 @@ import GoogleCloudAuthTesting
 import NIO
 import Testing
 
-@testable import CloudStorage
+@testable import GoogleCloudStorage
 
 @Suite(.enabledIfAuthenticatedWithGoogleCloud)
 struct SigningTests {

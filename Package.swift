@@ -7,8 +7,8 @@ let package = Package(
     .macOS(.v15)
   ],
   products: [
-    .library(name: "CloudStorage", targets: ["CloudStorage"]),
-    .library(name: "CloudStorageTesting", targets: ["CloudStorageTesting"]),
+    .library(name: "GoogleCloudStorage", targets: ["GoogleCloudStorage"]),
+    .library(name: "GoogleCloudStorageTesting", targets: ["GoogleCloudStorageTesting"]),
   ],
   dependencies: [
     .package(url: "https://github.com/apple/swift-crypto.git", from: "3.3.0"),
@@ -20,7 +20,7 @@ let package = Package(
   ],
   targets: [
     .target(
-      name: "CloudStorage",
+      name: "GoogleCloudStorage",
       dependencies: [
         .product(name: "AsyncHTTPClient", package: "async-http-client"),
         .product(name: "Crypto", package: "swift-crypto"),
@@ -31,23 +31,23 @@ let package = Package(
       ]
     ),
     .testTarget(
-      name: "CloudStorageTests",
+      name: "GoogleCloudStorageTests",
       dependencies: [
-        "CloudStorage",
+        "GoogleCloudStorage",
         .product(name: "GoogleCloudAuthTesting", package: "google-cloud-auth-swift"),
       ]
     ),
 
     .target(
-      name: "CloudStorageTesting",
+      name: "GoogleCloudStorageTesting",
       dependencies: [
-        "CloudStorage"
+        "GoogleCloudStorage"
       ]
     ),
     .testTarget(
-      name: "CloudStorageTestingTests",
+      name: "GoogleCloudStorageTestingTests",
       dependencies: [
-        "CloudStorageTesting"
+        "GoogleCloudStorageTesting"
       ]
     ),
   ]

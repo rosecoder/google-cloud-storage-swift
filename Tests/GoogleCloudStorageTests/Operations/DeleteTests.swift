@@ -1,10 +1,10 @@
-import CloudStorage
+import GoogleCloudStorage
 import Testing
 
 @Suite(.enabledIfAuthenticatedWithGoogleCloud)
-struct InsertTests {
+struct DeleteTests {
 
-  @Test func writeSimpleTextObject() async throws {
+  @Test func deleteObject() async throws {
     let bucket = Bucket.test
     let object = Object.test()
 
@@ -19,11 +19,13 @@ struct InsertTests {
         in: bucket
       )
 
+      // Act
+      try await storage.delete(object: object, in: bucket)
+
       // Assert
-      // TODO: Check if object is written
+      // TODO: Check if object is deleted
 
       // Cleanup
-      try await storage.delete(object: object, in: bucket)
     } catch {
       run.cancel()
       try await run.value
