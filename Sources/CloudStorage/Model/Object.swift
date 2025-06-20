@@ -2,21 +2,21 @@ import Foundation
 
 public struct Object: Sendable {
 
-    public let path: String
+  public let path: String
 
-    public init(path: String) {
-        self.path = path
-    }
+  public init(path: String) {
+    self.path = path
+  }
 
-    // MARK: - Requests
+  // MARK: - Requests
 
-    var urlEncoded: String {
-        path.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
-    }
+  var urlEncoded: String {
+    path.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
+  }
 
-#if DEBUG
+  #if DEBUG
     func localStorageURL(in bucket: Bucket) -> URL {
-        URL(fileURLWithPath: bucket.localStorageURL.path + "/" + path)
+      URL(fileURLWithPath: bucket.localStorageURL.path + "/" + path)
     }
-#endif
+  #endif
 }
