@@ -44,5 +44,11 @@ let package = Package(
         "CloudStorage"
       ]
     ),
+    .testTarget(
+      name: "CloudStorageTestingTests",
+      dependencies: [
+        "CloudStorageTesting"
+      ]
+    ),
   ]
 )
