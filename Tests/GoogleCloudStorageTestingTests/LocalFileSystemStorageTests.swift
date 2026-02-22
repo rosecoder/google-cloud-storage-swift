@@ -217,6 +217,67 @@ struct LocalFileSystemStorageTests {
     try await storage.delete(object: binaryObject, in: bucket)
   }
 
+  @Test func listReturnsEmptyForEmptyBucket() async throws {
+    let storage = try LocalFileSystemStorage()
+    let emptyBucket = Bucket(name: "empty-list-bucket")
+
+    let objects = try await storage.list(in: emptyBucket)
+    #expect(objects.isEmpty)
+  }
+
+  @Test func listReturnsInsertedObjects() async throws {
+    let storage = try LocalFileSystemStorage()
+    let listBucket = Bucket(name: "list-test-bucket")
+    let object1 = Object(path: "a/file1.txt")
+    let object2 = Object(path: "b/file2.txt")
+
+    try await storage.insert(
+      data: Data(), contentType: "text/plain", object: object1, in: listBucket)
+    try await storage.insert(
+      data: Data(), contentType: "text/plain", object: object2, in: listBucket)
+
+    let listed = try await storage.list(in: listBucket)
+    let paths = listed.map(\.path).sorted()
+
+    #expect(paths == ["a/file1.txt", "b/file2.txt"])
+
+    // Cleanup
+    try await storage.delete(object: object1, in: listBucket)
+    try await storage.delete(object: object2, in: listBucket)
+  }
+
+  @Test func listIsIsolatedToBucket() async throws {
+    let storage = try LocalFileSystemStorage()
+    let bucketA = Bucket(name: "isolated-list-bucket-a")
+    let bucketB = Bucket(name: "isolated-list-bucket-b")
+    let object = Object(path: "shared/path.txt")
+
+    try await storage.insert(
+      data: Data(), contentType: "text/plain", object: object, in: bucketA)
+
+    let listedA = try await storage.list(in: bucketA)
+    let listedB = try await storage.list(in: bucketB)
+
+    #expect(listedA.map(\.path) == ["shared/path.txt"])
+    #expect(listedB.isEmpty)
+
+    // Cleanup
+    try await storage.delete(object: object, in: bucketA)
+  }
+
+  @Test func listReflectsDeletions() async throws {
+    let storage = try LocalFileSystemStorage()
+    let deletionBucket = Bucket(name: "deletion-list-bucket")
+    let object = Object(path: "to-delete.txt")
+
+    try await storage.insert(
+      data: Data(), contentType: "text/plain", object: object, in: deletionBucket)
+    #expect(try await storage.list(in: deletionBucket).count == 1)
+
+    try await storage.delete(object: object, in: deletionBucket)
+    #expect(try await storage.list(in: deletionBucket).isEmpty)
+  }
+
   @Test func bucketSeparation() async throws {
     let storage = try LocalFileSystemStorage()
     let bucket1 = Bucket(name: "bucket-1")

@@ -24,6 +24,15 @@ public final class InMemoryStorage: StorageProtocol {
     }
   }
 
+  public func list(in bucket: Bucket) async throws -> [Object] {
+    let prefix = bucket.name + "/"
+    return objects.withLock { storage in
+      storage.keys
+        .filter { $0.hasPrefix(prefix) }
+        .map { Object(path: String($0.dropFirst(prefix.count))) }
+    }
+  }
+
   public func generateSignedURL(
     for action: SignedAction,
     expiration: TimeInterval,
