@@ -75,6 +75,50 @@ public final class Storage: Service, StorageProtocol {
     }
   }
 
+  func execute<T: Decodable>(
+    method: HTTPMethod,
+    path: String,
+    queryItems: [URLQueryItem]? = nil,
+    headers: HTTPHeaders? = nil,
+    body: HTTPClientRequest.Body? = nil
+  ) async throws -> T {
+    var urlComponents = URLComponents(string: "https://storage.googleapis.com" + path)!
+    urlComponents.queryItems = queryItems
+
+    var request = HTTPClientRequest(url: urlComponents.string!)
+    request.method = method
+    if let headers {
+      request.headers = headers
+    }
+    if let body {
+      request.body = body
+    }
+
+    let accessToken = try await authorization.accessToken()
+    request.headers.add(name: "Authorization", value: "Bearer " + accessToken)
+
+    let response = try await client.execute(request, timeout: .seconds(30))
+
+    switch response.status {
+    case .ok, .created, .accepted:
+      let responseBody = try await response.body.collect(upTo: 1024 * 1024)  // 1 MB
+      return try JSONDecoder().decode(T.self, from: responseBody)
+    case .notFound:
+      throw NotFoundError()
+    default:
+      let responseBody = try await response.body.collect(upTo: 1024 * 10)  // 10 KB
+
+      let remoteError: RemoteError
+      do {
+        remoteError = try JSONDecoder().decode(RemoteError.self, from: responseBody)
+      } catch {
+        throw UnparsableRemoteError(
+          statusCode: response.status.code, description: String(buffer: responseBody))
+      }
+      throw remoteError
+    }
+  }
+
   func execute(
     method: HTTPMethod,
     path: String,

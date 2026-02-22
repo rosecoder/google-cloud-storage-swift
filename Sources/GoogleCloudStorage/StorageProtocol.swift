@@ -11,6 +11,8 @@ public protocol StorageProtocol: Sendable {
 
   func delete(object: Object, in bucket: Bucket) async throws
 
+  func list(in bucket: Bucket) async throws -> [Object]
+
   func generateSignedURL(
     for action: SignedAction,
     expiration: TimeInterval,

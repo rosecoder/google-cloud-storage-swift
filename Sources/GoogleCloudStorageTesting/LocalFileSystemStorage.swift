@@ -61,6 +61,33 @@ public final class LocalFileSystemStorage: StorageProtocol {
     try FileManager.default.removeItem(at: fileURL)
   }
 
+  public func list(in bucket: Bucket) async throws -> [Object] {
+    let bucketURL = bucketURL(for: bucket)
+
+    guard FileManager.default.fileExists(atPath: bucketURL.path) else {
+      return []
+    }
+
+    guard
+      let enumerator = FileManager.default.enumerator(
+        at: bucketURL,
+        includingPropertiesForKeys: [.isRegularFileKey],
+        options: .skipsHiddenFiles
+      )
+    else {
+      return []
+    }
+
+    return enumerator.allObjects.compactMap { item -> Object? in
+      guard let fileURL = item as? URL,
+        let resourceValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey]),
+        resourceValues.isRegularFile == true
+      else { return nil }
+      let relativePath = fileURL.path.dropFirst(bucketURL.path.count + 1)
+      return Object(path: String(relativePath))
+    }
+  }
+
   public func generateSignedURL(
     for action: SignedAction,
     expiration: TimeInterval,
