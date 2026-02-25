@@ -93,6 +93,42 @@ struct LocalFileSystemStorageTests {
     try await storage.delete(object: object, in: bucket)
   }
 
+  @Test func downloadReturnsInsertedData() async throws {
+    let storage = try LocalFileSystemStorage()
+    let object = Object(path: "download/file.txt")
+    let testData = "Hello, World!".data(using: .utf8)!
+
+    try await storage.insert(data: testData, contentType: "text/plain", object: object, in: bucket)
+
+    let downloadedData = try await storage.download(object: object, in: bucket)
+    #expect(downloadedData == testData)
+
+    // Cleanup
+    try await storage.delete(object: object, in: bucket)
+  }
+
+  @Test func downloadNonexistentObjectThrowsError() async throws {
+    let storage = try LocalFileSystemStorage()
+    let object = Object(path: "nonexistent/file.txt")
+
+    await #expect(throws: StorageError.self) {
+      try await storage.download(object: object, in: bucket)
+    }
+  }
+
+  @Test func downloadAfterDeleteThrowsError() async throws {
+    let storage = try LocalFileSystemStorage()
+    let object = Object(path: "download/ephemeral.txt")
+    let testData = "temporary".data(using: .utf8)!
+
+    try await storage.insert(data: testData, contentType: "text/plain", object: object, in: bucket)
+    try await storage.delete(object: object, in: bucket)
+
+    await #expect(throws: StorageError.self) {
+      try await storage.download(object: object, in: bucket)
+    }
+  }
+
   @Test func deleteExistingObject() async throws {
     let storage = try LocalFileSystemStorage()
     let object = Object(path: "delete/me.txt")

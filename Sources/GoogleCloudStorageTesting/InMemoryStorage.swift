@@ -24,6 +24,13 @@ public final class InMemoryStorage: StorageProtocol {
     }
   }
 
+  public func download(object: Object, in bucket: Bucket) async throws -> Data {
+    guard let data = objects.withLock({ $0[key(object: object, in: bucket)] }) else {
+      throw StorageError.objectNotFound("Object \(object.path) not found in bucket \(bucket.name)")
+    }
+    return data
+  }
+
   public func list(in bucket: Bucket) async throws -> [Object] {
     let prefix = bucket.name + "/"
     return objects.withLock { storage in
