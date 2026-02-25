@@ -104,6 +104,7 @@ public final class Storage: Service, StorageProtocol {
       let responseBody = try await response.body.collect(upTo: 100 * 1024 * 1024)  // 100 MB
       return Data(buffer: responseBody)
     case .notFound:
+      _ = try? await response.body.collect(upTo: 1024 * 10)  // drain so the connection can be reused
       throw NotFoundError()
     default:
       let responseBody = try await response.body.collect(upTo: 1024 * 10)  // 10 KB
@@ -148,6 +149,7 @@ public final class Storage: Service, StorageProtocol {
       let responseBody = try await response.body.collect(upTo: 1024 * 1024)  // 1 MB
       return try JSONDecoder().decode(T.self, from: responseBody)
     case .notFound:
+      _ = try? await response.body.collect(upTo: 1024 * 10)  // drain so the connection can be reused
       throw NotFoundError()
     default:
       let responseBody = try await response.body.collect(upTo: 1024 * 10)  // 10 KB
@@ -193,6 +195,7 @@ public final class Storage: Service, StorageProtocol {
     case .ok, .created, .accepted, .noContent:
       return
     case .notFound:
+      _ = try? await response.body.collect(upTo: 1024 * 10)  // drain so the connection can be reused
       throw NotFoundError()
     default:
       let body = try await response.body.collect(upTo: 1024 * 10)  // 10 KB
