@@ -61,6 +61,17 @@ public final class LocalFileSystemStorage: StorageProtocol {
     try FileManager.default.removeItem(at: fileURL)
   }
 
+  public func download(object: Object, in bucket: Bucket) async throws -> Data {
+    let fileURL = fileURL(for: object, in: bucket)
+
+    guard FileManager.default.fileExists(atPath: fileURL.path) else {
+      throw StorageError.objectNotFound(
+        "Object \(object.path) not found in bucket \(bucket.name)")
+    }
+
+    return try Data(contentsOf: fileURL)
+  }
+
   public func list(in bucket: Bucket) async throws -> [Object] {
     let bucketURL = bucketURL(for: bucket)
 

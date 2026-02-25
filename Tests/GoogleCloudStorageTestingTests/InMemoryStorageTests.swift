@@ -35,6 +35,36 @@ struct InMemoryStorageTests {
     #expect(true)
   }
 
+  @Test func downloadReturnsInsertedData() async throws {
+    let object = Object(path: "test/file.txt")
+    let testData = "Hello, World!".data(using: .utf8)!
+
+    storage.insert(data: testData, contentType: "text/plain", object: object, in: bucket)
+
+    let downloadedData = try await storage.download(object: object, in: bucket)
+    #expect(downloadedData == testData)
+  }
+
+  @Test func downloadNonexistentObjectThrowsError() async throws {
+    let object = Object(path: "nonexistent/file.txt")
+
+    await #expect(throws: StorageError.self) {
+      try await storage.download(object: object, in: bucket)
+    }
+  }
+
+  @Test func downloadAfterDeleteThrowsError() async throws {
+    let object = Object(path: "test/ephemeral.txt")
+    let testData = "temporary".data(using: .utf8)!
+
+    storage.insert(data: testData, contentType: "text/plain", object: object, in: bucket)
+    storage.delete(object: object, in: bucket)
+
+    await #expect(throws: StorageError.self) {
+      try await storage.download(object: object, in: bucket)
+    }
+  }
+
   @Test func deleteObject() async throws {
     let object = Object(path: "test/delete-me.txt")
     let testData = "To be deleted".data(using: .utf8)!

@@ -26,6 +26,19 @@ extension Storage {
     }
   }
 
+  // MARK: - Download
+
+  public func download(object: Object, in bucket: Bucket) async throws -> Data {
+    try await withSpan("storage-download", ofKind: .client) { span in
+      span.attributes["storage/bucket"] = bucket.name
+      return try await executeData(
+        method: .GET,
+        path: "/storage/v1/b/\(bucket.urlEncoded)/o/\(object.urlEncoded)",
+        queryItems: [.init(name: "alt", value: "media")]
+      )
+    }
+  }
+
   // MARK: - Delete
 
   public func delete(object: Object, in bucket: Bucket) async throws {
