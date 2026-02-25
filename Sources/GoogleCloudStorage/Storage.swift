@@ -29,6 +29,15 @@ public final class Storage: Service, StorageProtocol {
     self.client = HTTPClient(eventLoopGroupProvider: .shared(.singletonMultiThreadedEventLoopGroup))
   }
 
+  deinit {
+    let client = self.client
+    let authorization = self.authorization
+    Task.detached {
+      try? await client.shutdown()
+      try? await authorization.shutdown()
+    }
+  }
+
   public func run() async throws {
     await cancelWhenGracefulShutdown {
       while !Task.isCancelled {
