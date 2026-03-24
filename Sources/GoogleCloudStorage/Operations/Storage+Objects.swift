@@ -50,7 +50,7 @@ extension Storage {
       )
     }
   }
-    
+
   public func list(in bucket: Bucket) async throws -> [Object] {
     try await withSpan("storage-list", ofKind: .client) { span in
       span.attributes["storage/bucket"] = bucket.name
