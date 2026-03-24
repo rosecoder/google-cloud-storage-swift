@@ -1,9 +1,11 @@
 import Foundation
 import GoogleCloudStorage
+import Synchronization
 
-public final class LocalFileSystemStorage: StorageProtocol {
+public final class LocalFileSystemStorage: StorageProtocol, Sendable {
 
   private let baseURL: URL
+  private let signedURLServerHolder = Mutex<SignedURLLocalHTTPServer?>(nil)
 
   public init() throws {
     guard
@@ -20,6 +22,15 @@ public final class LocalFileSystemStorage: StorageProtocol {
     try FileManager.default.createDirectory(at: baseURL, withIntermediateDirectories: true)
   }
 
+  deinit {
+    let server = signedURLServerHolder.withLock { holder in
+      let out = holder
+      holder = nil
+      return out
+    }
+    server?.shutdown()
+  }
+
   private func fileURL(for object: Object, in bucket: Bucket) -> URL {
     baseURL
       .appendingPathComponent(bucket.name)
@@ -33,21 +44,7 @@ public final class LocalFileSystemStorage: StorageProtocol {
   public func insert(data: Data, contentType: String, object: Object, in bucket: Bucket)
     async throws
   {
-    let fileURL = fileURL(for: object, in: bucket)
-    let bucketURL = bucketURL(for: bucket)
-
-    // Create bucket directory if it doesn't exist
-    try FileManager.default.createDirectory(at: bucketURL, withIntermediateDirectories: true)
-
-    // Create object directory structure if needed
-    let objectDirectory = fileURL.deletingLastPathComponent()
-    if objectDirectory != bucketURL {
-      try FileManager.default.createDirectory(
-        at: objectDirectory, withIntermediateDirectories: true)
-    }
-
-    // Write the data to the file
-    try data.write(to: fileURL)
+    try writeDataToFileSync(data: data, object: object, in: bucket)
   }
 
   public func delete(object: Object, in bucket: Bucket) async throws {
@@ -105,6 +102,66 @@ public final class LocalFileSystemStorage: StorageProtocol {
     object: Object,
     in bucket: Bucket
   ) async throws -> String {
-    fileURL(for: object, in: bucket).absoluteString
+    let server = try await signedURLServerIfNeeded()
+    let baseURL = try await server.ensureStarted()
+    let token = UUID().uuidString
+
+    switch action {
+    case .reading:
+      server.registerToken(
+        token,
+        kind: .read { [weak self] in
+          guard let self else { return nil }
+          let url = self.fileURL(for: object, in: bucket)
+          guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+          return try? Data(contentsOf: url)
+        },
+        expiration: expiration
+      )
+    case .writing:
+      server.registerToken(
+        token,
+        kind: .write { [weak self] data, _ in
+          guard let self else { return }
+          try? self.writeDataToFileSync(data: data, object: object, in: bucket)
+        },
+        expiration: expiration
+      )
+    }
+
+    return baseURL + "/" + token
+  }
+
+  private func signedURLServerIfNeeded() async throws -> SignedURLLocalHTTPServer {
+    if let existing = signedURLServerHolder.withLock({ $0 }) {
+      return existing
+    }
+
+    let server = SignedURLLocalHTTPServer()
+    _ = try await server.ensureStarted()
+
+    return signedURLServerHolder.withLock { holder in
+      if let existing = holder {
+        server.shutdown()
+        return existing
+      }
+      holder = server
+      return server
+    }
+  }
+
+  private func writeDataToFileSync(data: Data, object: Object, in bucket: Bucket) throws {
+    let fileURL = fileURL(for: object, in: bucket)
+    let bucketURL = bucketURL(for: bucket)
+
+    try FileManager.default.createDirectory(at: bucketURL, withIntermediateDirectories: true)
+
+    let objectDirectory = fileURL.deletingLastPathComponent()
+    if objectDirectory != bucketURL {
+      try FileManager.default.createDirectory(
+        at: objectDirectory, withIntermediateDirectories: true)
+    }
+
+    try data.write(to: fileURL)
   }
 }

@@ -9,10 +9,11 @@ struct LocalFileSystemStorageTests {
   private let bucket = Bucket(name: "test-bucket")
 
   @Test func initializationCreatesBaseDirectory() async throws {
-    let storage = try LocalFileSystemStorage()
+    _ = try LocalFileSystemStorage()
 
-    // Storage should initialize without error
-    #expect(storage != nil)
+    let base = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+      ".google-cloud-storage")
+    #expect(FileManager.default.fileExists(atPath: base.path))
   }
 
   @Test func insertCreatesFileAndDirectories() async throws {
@@ -23,22 +24,23 @@ struct LocalFileSystemStorageTests {
     try await storage.insert(
       data: testData, contentType: "text/plain", object: object, in: bucket)
 
-    // Verify file was created by checking if we can generate a URL
     let signedURL = try await storage.generateSignedURL(
       for: .reading,
       expiration: 3600,
       object: object,
       in: bucket
     )
+    #expect(signedURL.hasPrefix("http://127.0.0.1:"))
 
-    let fileURL = URL(string: signedURL)!
-    #expect(FileManager.default.fileExists(atPath: fileURL.path))
-
-    // Verify content
-    let retrievedData = try Data(contentsOf: fileURL)
+    let retrievedData = try await storage.download(object: object, in: bucket)
     #expect(retrievedData == testData)
 
-    // Cleanup
+    let (data, response) = try await URLSession.shared.data(
+      from: try #require(URL(string: signedURL)))
+    let status = try #require((response as? HTTPURLResponse)?.statusCode)
+    #expect(status == 200)
+    #expect(data == testData)
+
     try await storage.delete(object: object, in: bucket)
   }
 
@@ -54,16 +56,9 @@ struct LocalFileSystemStorageTests {
     try await storage.insert(
       data: testData2, contentType: "text/plain", object: object2, in: bucket)
 
-    // Verify both files exist
-    let url1 = try await storage.generateSignedURL(
-      for: .reading, expiration: 3600, object: object1, in: bucket)
-    let url2 = try await storage.generateSignedURL(
-      for: .reading, expiration: 3600, object: object2, in: bucket)
+    #expect(try await storage.download(object: object1, in: bucket) == testData1)
+    #expect(try await storage.download(object: object2, in: bucket) == testData2)
 
-    #expect(FileManager.default.fileExists(atPath: URL(string: url1)!.path))
-    #expect(FileManager.default.fileExists(atPath: URL(string: url2)!.path))
-
-    // Cleanup
     try await storage.delete(object: object1, in: bucket)
     try await storage.delete(object: object2, in: bucket)
   }
@@ -74,22 +69,15 @@ struct LocalFileSystemStorageTests {
     let originalData = "Original content".data(using: .utf8)!
     let newData = "New content".data(using: .utf8)!
 
-    // Insert original file
     try await storage.insert(
       data: originalData, contentType: "text/plain", object: object, in: bucket)
 
-    // Overwrite with new content
     try await storage.insert(
       data: newData, contentType: "text/plain", object: object, in: bucket)
 
-    // Verify new content
-    let signedURL = try await storage.generateSignedURL(
-      for: .reading, expiration: 3600, object: object, in: bucket)
-    let fileURL = URL(string: signedURL)!
-    let retrievedData = try Data(contentsOf: fileURL)
+    let retrievedData = try await storage.download(object: object, in: bucket)
     #expect(retrievedData == newData)
 
-    // Cleanup
     try await storage.delete(object: object, in: bucket)
   }
 
@@ -103,7 +91,6 @@ struct LocalFileSystemStorageTests {
     let downloadedData = try await storage.download(object: object, in: bucket)
     #expect(downloadedData == testData)
 
-    // Cleanup
     try await storage.delete(object: object, in: bucket)
   }
 
@@ -134,21 +121,16 @@ struct LocalFileSystemStorageTests {
     let object = Object(path: "delete/me.txt")
     let testData = "To be deleted".data(using: .utf8)!
 
-    // First insert the object
     try await storage.insert(
       data: testData, contentType: "text/plain", object: object, in: bucket)
 
-    // Verify it exists
-    let signedURL = try await storage.generateSignedURL(
-      for: .reading, expiration: 3600, object: object, in: bucket)
-    let fileURL = URL(string: signedURL)!
-    #expect(FileManager.default.fileExists(atPath: fileURL.path))
+    #expect(try await storage.download(object: object, in: bucket) == testData)
 
-    // Delete it
     try await storage.delete(object: object, in: bucket)
 
-    // Verify it's gone
-    #expect(!FileManager.default.fileExists(atPath: fileURL.path))
+    await #expect(throws: StorageError.self) {
+      try await storage.download(object: object, in: bucket)
+    }
   }
 
   @Test func deleteNonexistentObjectThrowsError() async throws {
@@ -165,11 +147,9 @@ struct LocalFileSystemStorageTests {
     let object = Object(path: "signed/url/test.txt")
     let testData = "URL test content".data(using: .utf8)!
 
-    // Insert file first
     try await storage.insert(
       data: testData, contentType: "text/plain", object: object, in: bucket)
 
-    // Generate signed URL
     let signedURL = try await storage.generateSignedURL(
       for: .reading,
       expiration: 3600,
@@ -177,21 +157,22 @@ struct LocalFileSystemStorageTests {
       in: bucket
     )
 
-    // URL should be a valid file URL
-    #expect(signedURL.hasPrefix("file://"))
+    #expect(signedURL.hasPrefix("http://127.0.0.1:"))
 
-    let fileURL = URL(string: signedURL)!
-    #expect(FileManager.default.fileExists(atPath: fileURL.path))
+    let (data, response) = try await URLSession.shared.data(
+      from: try #require(URL(string: signedURL)))
+    let status = try #require((response as? HTTPURLResponse)?.statusCode)
+    #expect(status == 200)
+    #expect(data == testData)
 
-    // Cleanup
     try await storage.delete(object: object, in: bucket)
   }
 
   @Test func generateSignedURLForWriting() async throws {
     let storage = try LocalFileSystemStorage()
     let object = Object(path: "write/test.txt")
+    let payload = "written-via-signed-put".data(using: .utf8)!
 
-    // Generate signed URL for writing (should work even if file doesn't exist)
     let signedURL = try await storage.generateSignedURL(
       for: .writing,
       expiration: 3600,
@@ -199,14 +180,135 @@ struct LocalFileSystemStorageTests {
       in: bucket
     )
 
-    // URL should be a valid file URL
-    #expect(signedURL.hasPrefix("file://"))
+    #expect(signedURL.hasPrefix("http://127.0.0.1:"))
 
-    // The URL should point to where the file would be stored
-    let fileURL = URL(string: signedURL)!
-    let expectedPath = fileURL.path
-    #expect(expectedPath.contains(bucket.name))
-    #expect(expectedPath.contains(object.path))
+    var request = URLRequest(url: try #require(URL(string: signedURL)))
+    request.httpMethod = "PUT"
+    request.setValue("text/plain", forHTTPHeaderField: "Content-Type")
+    request.httpBody = payload
+
+    let (_, response) = try await URLSession.shared.data(for: request)
+    let status = try #require((response as? HTTPURLResponse)?.statusCode)
+    #expect((200..<300).contains(status))
+
+    #expect(try await storage.download(object: object, in: bucket) == payload)
+
+    try await storage.delete(object: object, in: bucket)
+  }
+
+  @Test func generateSignedURLForWritingUploadsViaHTTP() async throws {
+    let storage = try LocalFileSystemStorage()
+    let object = Object(path: "signed/write/via-http.txt")
+    let payload = "uploaded-by-put".data(using: .utf8)!
+
+    let signedURL = try await storage.generateSignedURL(
+      for: .writing,
+      expiration: 30,
+      object: object,
+      in: bucket
+    )
+
+    #expect(signedURL.hasPrefix("http://127.0.0.1:"))
+
+    var request = URLRequest(url: try #require(URL(string: signedURL)))
+    request.httpMethod = "PUT"
+    request.setValue("text/plain", forHTTPHeaderField: "Content-Type")
+    request.httpBody = payload
+
+    let (_, response) = try await URLSession.shared.data(for: request)
+    let status = try #require((response as? HTTPURLResponse)?.statusCode)
+    #expect((200..<300).contains(status))
+
+    let downloaded = try await storage.download(object: object, in: bucket)
+    #expect(downloaded == payload)
+
+    try await storage.delete(object: object, in: bucket)
+  }
+
+  @Test func generateSignedURLForReadingServesObjectViaHTTP() async throws {
+    let storage = try LocalFileSystemStorage()
+    let object = Object(path: "signed/read/via-http.txt")
+    let payload = "already-on-disk".data(using: .utf8)!
+
+    try await storage.insert(
+      data: payload, contentType: "text/plain", object: object, in: bucket)
+
+    let signedURL = try await storage.generateSignedURL(
+      for: .reading,
+      expiration: 30,
+      object: object,
+      in: bucket
+    )
+
+    #expect(signedURL.hasPrefix("http://127.0.0.1:"))
+
+    let (data, response) = try await URLSession.shared.data(
+      from: try #require(URL(string: signedURL)))
+    let status = try #require((response as? HTTPURLResponse)?.statusCode)
+    #expect(status == 200)
+    #expect(data == payload)
+
+    try await storage.delete(object: object, in: bucket)
+  }
+
+  @Test func concurrentSignedURLWritesDoNotConflict() async throws {
+    let storage = try LocalFileSystemStorage()
+    let count = 32
+    var urls: [(Int, String)] = []
+    for index in 0..<count {
+      let object = Object(path: "concurrent/signed/\(index).txt")
+      let url = try await storage.generateSignedURL(
+        for: .writing,
+        expiration: 60,
+        object: object,
+        in: bucket
+      )
+      urls.append((index, url))
+    }
+
+    let statuses = try await withThrowingTaskGroup(of: Int.self) { group in
+      for (index, urlString) in urls {
+        group.addTask {
+          let body = "payload-\(index)".data(using: .utf8)!
+          var request = URLRequest(url: try #require(URL(string: urlString)))
+          request.httpMethod = "PUT"
+          request.setValue("text/plain", forHTTPHeaderField: "Content-Type")
+          request.httpBody = body
+          let (_, response) = try await URLSession.shared.data(for: request)
+          return try #require((response as? HTTPURLResponse)?.statusCode)
+        }
+      }
+      var codes: [Int] = []
+      for try await status in group {
+        codes.append(status)
+      }
+      return codes
+    }
+
+    for status in statuses {
+      #expect((200..<300).contains(status))
+    }
+
+    for index in 0..<count {
+      let object = Object(path: "concurrent/signed/\(index).txt")
+      let expected = "payload-\(index)".data(using: .utf8)!
+      let got = try await storage.download(object: object, in: bucket)
+      #expect(got == expected)
+      try await storage.delete(object: object, in: bucket)
+    }
+  }
+
+  @Test func separateLocalFileSystemStorageInstancesUseDistinctPorts() async throws {
+    let storageA = try LocalFileSystemStorage()
+    let storageB = try LocalFileSystemStorage()
+    let object = Object(path: "port-check.txt")
+
+    let urlA = try await storageA.generateSignedURL(
+      for: .writing, expiration: 30, object: object, in: bucket)
+    let urlB = try await storageB.generateSignedURL(
+      for: .writing, expiration: 30, object: object, in: bucket)
+
+    #expect(urlA != urlB)
   }
 
   @Test func insertDifferentContentTypes() async throws {
@@ -227,27 +329,10 @@ struct LocalFileSystemStorageTests {
     try await storage.insert(
       data: binaryData, contentType: "image/jpeg", object: binaryObject, in: bucket)
 
-    // Verify all files were created
-    let textURL = URL(
-      string: try await storage.generateSignedURL(
-        for: .reading, expiration: 3600, object: textObject, in: bucket))!
-    let jsonURL = URL(
-      string: try await storage.generateSignedURL(
-        for: .reading, expiration: 3600, object: jsonObject, in: bucket))!
-    let binaryURL = URL(
-      string: try await storage.generateSignedURL(
-        for: .reading, expiration: 3600, object: binaryObject, in: bucket))!
+    #expect(try await storage.download(object: textObject, in: bucket) == textData)
+    #expect(try await storage.download(object: jsonObject, in: bucket) == jsonData)
+    #expect(try await storage.download(object: binaryObject, in: bucket) == binaryData)
 
-    #expect(FileManager.default.fileExists(atPath: textURL.path))
-    #expect(FileManager.default.fileExists(atPath: jsonURL.path))
-    #expect(FileManager.default.fileExists(atPath: binaryURL.path))
-
-    // Verify content integrity
-    #expect(try Data(contentsOf: textURL) == textData)
-    #expect(try Data(contentsOf: jsonURL) == jsonData)
-    #expect(try Data(contentsOf: binaryURL) == binaryData)
-
-    // Cleanup
     try await storage.delete(object: textObject, in: bucket)
     try await storage.delete(object: jsonObject, in: bucket)
     try await storage.delete(object: binaryObject, in: bucket)
@@ -277,7 +362,6 @@ struct LocalFileSystemStorageTests {
 
     #expect(paths == ["a/file1.txt", "b/file2.txt"])
 
-    // Cleanup
     try await storage.delete(object: object1, in: listBucket)
     try await storage.delete(object: object2, in: listBucket)
   }
@@ -297,7 +381,6 @@ struct LocalFileSystemStorageTests {
     #expect(listedA.map(\.path) == ["shared/path.txt"])
     #expect(listedB.isEmpty)
 
-    // Cleanup
     try await storage.delete(object: object, in: bucketA)
   }
 
@@ -323,25 +406,14 @@ struct LocalFileSystemStorageTests {
     let data1 = "Data in bucket 1".data(using: .utf8)!
     let data2 = "Data in bucket 2".data(using: .utf8)!
 
-    // Insert same object path in different buckets
     try await storage.insert(
       data: data1, contentType: "text/plain", object: object, in: bucket1)
     try await storage.insert(
       data: data2, contentType: "text/plain", object: object, in: bucket2)
 
-    // Verify they're stored separately
-    let url1 = URL(
-      string: try await storage.generateSignedURL(
-        for: .reading, expiration: 3600, object: object, in: bucket1))!
-    let url2 = URL(
-      string: try await storage.generateSignedURL(
-        for: .reading, expiration: 3600, object: object, in: bucket2))!
+    #expect(try await storage.download(object: object, in: bucket1) == data1)
+    #expect(try await storage.download(object: object, in: bucket2) == data2)
 
-    #expect(url1.path != url2.path)  // Different paths
-    #expect(try Data(contentsOf: url1) == data1)
-    #expect(try Data(contentsOf: url2) == data2)
-
-    // Cleanup
     try await storage.delete(object: object, in: bucket1)
     try await storage.delete(object: object, in: bucket2)
   }
@@ -354,16 +426,9 @@ struct LocalFileSystemStorageTests {
     try await storage.insert(
       data: emptyData, contentType: "text/plain", object: object, in: bucket)
 
-    let signedURL = try await storage.generateSignedURL(
-      for: .reading, expiration: 3600, object: object, in: bucket)
-    let fileURL = URL(string: signedURL)!
-
-    #expect(FileManager.default.fileExists(atPath: fileURL.path))
-
-    let retrievedData = try Data(contentsOf: fileURL)
+    let retrievedData = try await storage.download(object: object, in: bucket)
     #expect(retrievedData.isEmpty)
 
-    // Cleanup
     try await storage.delete(object: object, in: bucket)
   }
 }
