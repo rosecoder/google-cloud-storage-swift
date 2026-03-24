@@ -1,5 +1,6 @@
 import Foundation
 import GoogleCloudStorage
+import ServiceLifecycle
 import Synchronization
 
 public final class LocalFileSystemStorage: StorageProtocol, Sendable {
@@ -163,5 +164,16 @@ public final class LocalFileSystemStorage: StorageProtocol, Sendable {
     }
 
     try data.write(to: fileURL)
+  }
+}
+
+extension LocalFileSystemStorage: Service {
+
+  public func run() async throws {
+    await cancelWhenGracefulShutdown {
+      while !Task.isCancelled {
+        try? await Task.sleep(nanoseconds: .max / 2)
+      }
+    }
   }
 }
