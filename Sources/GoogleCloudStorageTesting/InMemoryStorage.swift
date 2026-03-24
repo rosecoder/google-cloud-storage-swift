@@ -2,11 +2,21 @@ import Foundation
 import GoogleCloudStorage
 import Synchronization
 
-public final class InMemoryStorage: StorageProtocol {
+public final class InMemoryStorage: StorageProtocol, Sendable {
 
   private let objects = Mutex<[String: Data]>([:])
+  private let signedURLServerHolder = Mutex<SignedURLLocalHTTPServer?>(nil)
 
   public init() {}
+
+  deinit {
+    let server = signedURLServerHolder.withLock { holder in
+      let out = holder
+      holder = nil
+      return out
+    }
+    server?.shutdown()
+  }
 
   private func key(object: Object, in bucket: Bucket) -> String {
     bucket.name + "/" + object.path
@@ -46,7 +56,49 @@ public final class InMemoryStorage: StorageProtocol {
     object: Object,
     in bucket: Bucket
   ) async throws -> String {
-    // For in-memory storage, we can't generate actual signed URLs
-    throw StorageError.unsupportedOperation("InMemoryStorage does not support signed URLs")
+    let server = try await signedURLServerIfNeeded()
+    let baseURL = try await server.ensureStarted()
+    let token = UUID().uuidString
+
+    switch action {
+    case .reading:
+      server.registerToken(
+        token,
+        kind: .read { [weak self] in
+          guard let self else { return nil }
+          return self.objects.withLock { $0[self.key(object: object, in: bucket)] }
+        },
+        expiration: expiration
+      )
+    case .writing:
+      server.registerToken(
+        token,
+        kind: .write { [weak self] data, contentType in
+          guard let self else { return }
+          self.insert(data: data, contentType: contentType, object: object, in: bucket)
+        },
+        expiration: expiration
+      )
+    }
+
+    return baseURL + "/" + token
+  }
+
+  private func signedURLServerIfNeeded() async throws -> SignedURLLocalHTTPServer {
+    if let existing = signedURLServerHolder.withLock({ $0 }) {
+      return existing
+    }
+
+    let server = SignedURLLocalHTTPServer()
+    _ = try await server.ensureStarted()
+
+    return signedURLServerHolder.withLock { holder in
+      if let existing = holder {
+        server.shutdown()
+        return existing
+      }
+      holder = server
+      return server
+    }
   }
 }

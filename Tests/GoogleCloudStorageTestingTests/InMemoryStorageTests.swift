@@ -18,7 +18,6 @@ struct InMemoryStorageTests {
 
     // Verify the data was stored by checking internal state
     // Since we can't directly retrieve, we test through the key mechanism
-    #expect(true)  // Storage should not throw
   }
 
   @Test func insertMultipleObjects() async throws {
@@ -32,7 +31,6 @@ struct InMemoryStorageTests {
     storage.insert(data: testData2, contentType: "text/plain", object: object2, in: bucket)
 
     // Both operations should complete without error
-    #expect(true)
   }
 
   @Test func downloadReturnsInsertedData() async throws {
@@ -76,7 +74,6 @@ struct InMemoryStorageTests {
     storage.delete(object: object, in: bucket)
 
     // Delete should complete without error
-    #expect(true)
   }
 
   @Test func deleteNonexistentObject() async throws {
@@ -84,29 +81,116 @@ struct InMemoryStorageTests {
 
     // Deleting a non-existent object should not throw
     storage.delete(object: object, in: bucket)
-    #expect(true)
   }
 
-  @Test func generateSignedURLThrowsUnsupportedOperation() async throws {
-    let object = Object(path: "test/file.txt")
+  @Test func generateSignedURLForWritingUploadsViaHTTP() async throws {
+    let object = Object(path: "signed/write/via-http.txt")
+    let payload = "uploaded-by-put".data(using: .utf8)!
 
-    await #expect(throws: StorageError.self) {
-      try await storage.generateSignedURL(
-        for: .reading,
-        expiration: 3600,
-        object: object,
-        in: bucket
-      )
-    }
+    let signedURL = try await storage.generateSignedURL(
+      for: .writing,
+      expiration: 30,
+      object: object,
+      in: bucket
+    )
 
-    await #expect(throws: StorageError.self) {
-      try await storage.generateSignedURL(
+    #expect(signedURL.hasPrefix("http://127.0.0.1:"))
+
+    var request = URLRequest(url: try #require(URL(string: signedURL)))
+    request.httpMethod = "PUT"
+    request.setValue("text/plain", forHTTPHeaderField: "Content-Type")
+    request.httpBody = payload
+
+    let (_, response) = try await URLSession.shared.data(for: request)
+    let status = try #require((response as? HTTPURLResponse)?.statusCode)
+    #expect((200..<300).contains(status))
+
+    let downloaded = try await storage.download(object: object, in: bucket)
+    #expect(downloaded == payload)
+
+    storage.delete(object: object, in: bucket)
+  }
+
+  @Test func generateSignedURLForReadingServesObjectViaHTTP() async throws {
+    let object = Object(path: "signed/read/via-http.txt")
+    let payload = "already-in-memory".data(using: .utf8)!
+    storage.insert(data: payload, contentType: "text/plain", object: object, in: bucket)
+
+    let signedURL = try await storage.generateSignedURL(
+      for: .reading,
+      expiration: 30,
+      object: object,
+      in: bucket
+    )
+
+    #expect(signedURL.hasPrefix("http://127.0.0.1:"))
+
+    let (data, response) = try await URLSession.shared.data(
+      from: try #require(URL(string: signedURL)))
+    let status = try #require((response as? HTTPURLResponse)?.statusCode)
+    #expect(status == 200)
+    #expect(data == payload)
+
+    storage.delete(object: object, in: bucket)
+  }
+
+  @Test func concurrentSignedURLWritesDoNotConflict() async throws {
+    let count = 32
+    var urls: [(Int, String)] = []
+    for index in 0..<count {
+      let object = Object(path: "concurrent/signed/\(index).txt")
+      let url = try await storage.generateSignedURL(
         for: .writing,
-        expiration: 3600,
+        expiration: 60,
         object: object,
         in: bucket
       )
+      urls.append((index, url))
     }
+
+    let statuses = try await withThrowingTaskGroup(of: Int.self) { group in
+      for (index, urlString) in urls {
+        group.addTask {
+          let body = "payload-\(index)".data(using: .utf8)!
+          var request = URLRequest(url: try #require(URL(string: urlString)))
+          request.httpMethod = "PUT"
+          request.setValue("text/plain", forHTTPHeaderField: "Content-Type")
+          request.httpBody = body
+          let (_, response) = try await URLSession.shared.data(for: request)
+          return try #require((response as? HTTPURLResponse)?.statusCode)
+        }
+      }
+      var codes: [Int] = []
+      for try await status in group {
+        codes.append(status)
+      }
+      return codes
+    }
+
+    for status in statuses {
+      #expect((200..<300).contains(status))
+    }
+
+    for index in 0..<count {
+      let object = Object(path: "concurrent/signed/\(index).txt")
+      let expected = "payload-\(index)".data(using: .utf8)!
+      let got = try await storage.download(object: object, in: bucket)
+      #expect(got == expected)
+      storage.delete(object: object, in: bucket)
+    }
+  }
+
+  @Test func separateInMemoryStorageInstancesUseDistinctPorts() async throws {
+    let storageA = InMemoryStorage()
+    let storageB = InMemoryStorage()
+    let object = Object(path: "port-check.txt")
+
+    let urlA = try await storageA.generateSignedURL(
+      for: .writing, expiration: 30, object: object, in: bucket)
+    let urlB = try await storageB.generateSignedURL(
+      for: .writing, expiration: 30, object: object, in: bucket)
+
+    #expect(urlA != urlB)
   }
 
   @Test func threadSafetyTest() async throws {
@@ -134,7 +218,6 @@ struct InMemoryStorageTests {
     }
 
     // All operations should complete without data races or crashes
-    #expect(true)
   }
 
   @Test func listReturnsEmptyForEmptyBucket() async throws {
@@ -193,7 +276,6 @@ struct InMemoryStorageTests {
     storage.insert(data: testData, contentType: "text/plain", object: object, in: bucket2)
 
     // Both should be stored without interference
-    #expect(true)
   }
 
   @Test func insertWithDifferentContentTypes() async throws {
@@ -212,6 +294,5 @@ struct InMemoryStorageTests {
       data: binaryData, contentType: "image/jpeg", object: binaryObject, in: bucket)
 
     // All insertions should succeed regardless of content type
-    #expect(true)
   }
 }

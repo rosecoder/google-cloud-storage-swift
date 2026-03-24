@@ -17,6 +17,7 @@ let package = Package(
     .package(url: "https://github.com/rosecoder/google-cloud-auth-swift.git", from: "1.2.2"),
     .package(url: "https://github.com/rosecoder/google-cloud-service-context.git", from: "0.0.2"),
     .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.10.0"),
+    .package(url: "https://github.com/apple/swift-nio.git", from: "2.97.0"),
   ],
   targets: [
     .target(
@@ -41,7 +42,10 @@ let package = Package(
     .target(
       name: "GoogleCloudStorageTesting",
       dependencies: [
-        "GoogleCloudStorage"
+        "GoogleCloudStorage",
+        .product(name: "NIOCore", package: "swift-nio"),
+        .product(name: "NIOHTTP1", package: "swift-nio"),
+        .product(name: "NIOPosix", package: "swift-nio"),
       ]
     ),
     .testTarget(
