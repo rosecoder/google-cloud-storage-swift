@@ -11,7 +11,7 @@ let package = Package(
     .library(name: "GoogleCloudStorageTesting", targets: ["GoogleCloudStorageTesting"]),
   ],
   dependencies: [
-    .package(url: "https://github.com/apple/swift-crypto.git", from: "3.3.0"),
+    .package(url: "https://github.com/apple/swift-crypto.git", "3.3.0" ..< "5.0.0"),
     .package(url: "https://github.com/apple/swift-distributed-tracing.git", from: "1.1.0"),
     .package(url: "https://github.com/apple/swift-log.git", from: "1.4.2"),
     .package(url: "https://github.com/rosecoder/google-cloud-auth-swift.git", from: "1.2.2"),
