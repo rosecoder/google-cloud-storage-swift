@@ -182,6 +182,19 @@ internal final class SignedURLLocalHTTPServer: Sendable {
         return
       }
 
+      if head.method == .OPTIONS {
+        send(
+          context: context, status: .noContent, body: nil,
+          extraHeaders: [
+            ("Connection", "close"),
+            ("Access-Control-Allow-Methods", "GET, PUT, OPTIONS"),
+            ("Access-Control-Allow-Headers", "*"),
+            ("Access-Control-Max-Age", "3600"),
+          ])
+        context.close(promise: nil)
+        return
+      }
+
       let token = pathToken(from: head.uri)
       guard let token else {
         send(
@@ -288,6 +301,7 @@ internal final class SignedURLLocalHTTPServer: Sendable {
       extraHeaders: [(String, String)]
     ) {
       var headers = HTTPHeaders()
+      headers.add(name: "Access-Control-Allow-Origin", value: "*")
       for (n, v) in extraHeaders {
         headers.add(name: n, value: v)
       }

@@ -225,6 +225,49 @@ struct LocalFileSystemStorageTests {
     try await storage.delete(object: object, in: bucket)
   }
 
+  @Test func generateSignedURLForWritingAllowsCrossOriginUpload() async throws {
+    let storage = try LocalFileSystemStorage()
+    let object = Object(path: "signed/write/cors.txt")
+    let payload = "uploaded-from-browser".data(using: .utf8)!
+
+    let signedURL = try await storage.generateSignedURL(
+      for: .writing,
+      expiration: 30,
+      object: object,
+      in: bucket
+    )
+    let url = try #require(URL(string: signedURL))
+
+    var preflight = URLRequest(url: url)
+    preflight.httpMethod = "OPTIONS"
+    preflight.setValue("http://localhost:3000", forHTTPHeaderField: "Origin")
+    preflight.setValue("PUT", forHTTPHeaderField: "Access-Control-Request-Method")
+    preflight.setValue("content-type", forHTTPHeaderField: "Access-Control-Request-Headers")
+
+    let (_, preflightResponse) = try await URLSession.shared.data(for: preflight)
+    let preflightHTTPResponse = try #require(preflightResponse as? HTTPURLResponse)
+    #expect((200..<300).contains(preflightHTTPResponse.statusCode))
+    #expect(preflightHTTPResponse.value(forHTTPHeaderField: "Access-Control-Allow-Origin") == "*")
+    #expect(
+      preflightHTTPResponse.value(forHTTPHeaderField: "Access-Control-Allow-Methods")?
+        .contains("PUT") == true)
+
+    var request = URLRequest(url: url)
+    request.httpMethod = "PUT"
+    request.setValue("http://localhost:3000", forHTTPHeaderField: "Origin")
+    request.setValue("text/plain", forHTTPHeaderField: "Content-Type")
+    request.httpBody = payload
+
+    let (_, response) = try await URLSession.shared.data(for: request)
+    let httpResponse = try #require(response as? HTTPURLResponse)
+    #expect((200..<300).contains(httpResponse.statusCode))
+    #expect(httpResponse.value(forHTTPHeaderField: "Access-Control-Allow-Origin") == "*")
+
+    #expect(try await storage.download(object: object, in: bucket) == payload)
+
+    try await storage.delete(object: object, in: bucket)
+  }
+
   @Test func generateSignedURLForReadingServesObjectViaHTTP() async throws {
     let storage = try LocalFileSystemStorage()
     let object = Object(path: "signed/read/via-http.txt")
